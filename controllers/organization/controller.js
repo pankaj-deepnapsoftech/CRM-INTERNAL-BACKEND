@@ -6,6 +6,7 @@ const otpModel = require("../../models/otp");
 const adminModel = require("../../models/admin");
 const jwt = require("jsonwebtoken");
 const { sendEmail } = require("../../helpers/sendEmail");
+const { SendMail } = require("../../config/nodeMailer.config");
 const websiteConfigurationModel = require("../../models/websiteConfiguration");
 const settingModel = require("../../models/setting");
 const accountModel = require("../../models/account");
@@ -37,31 +38,29 @@ const create = TryCatch(async (req, res) => {
   });
 
   const otp = generateOTP();
-  await otpModel.create({
-    email,
-    otp,
-  });
+  await otpModel.findOneAndUpdate(
+    { email },
+    { email, otp },
+    { upsert: true, new: true }
+  );
 
+  // Send OTP via email
   try {
-    await sendEmail(
-      email,
-      "OTP Verification",
-      `
-      <div>Hi ${organization.name},</div>
-      <br>
-      <div>${otp} is your OTP(One-Time-Password) to verify your account. OTP is valid for 5 minutes. Do not share your OTP with anyone.</div>
-      <br>    
-      <div>Best Regards</div>
-      <div>Deepnap Softech</div>
-      `
+    await SendMail(
+      "OtpVerification.ejs",
+      {
+        userName: name,
+        otp: otp,
+      },
+      {
+        email: email,
+        subject: "OTP Verification - Organization Registration",
+      }
     );
-  } catch (emailError) {
-    console.error("Failed to send registration email:", emailError);
-    // Log the OTP for debugging in development (remove in production)
-    if (process.env.NODE_ENV !== 'production') {
-      console.log(`[DEV MODE] OTP for ${email}: ${otp}`);
-    }
-    throw emailError; // Re-throw to prevent registration if email fails
+    console.log(`[OTP] Email sent to: ${email}, OTP: ${otp}`);
+  } catch (error) {
+    console.error(`[OTP] Failed to send email to: ${email}`, error);
+    // Continue even if email fails
   }
 
   res.status(200).json({
@@ -86,58 +85,84 @@ const verifyOTP = TryCatch(async (req, res) => {
     { new: true }
   );
 
-  const account = await accountModel.create({
+  // Check if account already exists
+  let account = await accountModel.findOne({ organization: organization._id });
+  if (!account) {
+    account = await accountModel.create({
+      organization: organization._id,
+    });
+    account.trial_started = true;
+    account.trial_start = new Date();
+    await account.save();
+  }
+
+  // Check if admin already exists
+  let user = await adminModel.findOne({ 
     organization: organization._id,
+    email: organization.email 
   });
+  
+  if (!user) {
+    user = await adminModel.create({
+      organization: organization._id,
+      name: organization.name,
+      email: organization.email,
+      phone: organization.phone,
+      password: organization.password,
+      designation: "Owner",
+      role: "Super Admin",
+      allowedroutes: [
+        "admin",
+        "dashboard",
+        "people",
+        "company",
+        "lead",
+        "product",
+        "category",
+        "expense",
+        "expense-category",
+        "offer",
+        "proforma-invoice",
+        "invoice",
+        "payment",
+        "customer",
+        "report",
+        "support",
+        "website configuration",
+      ],
+      verified: true,
+    });
+  }
 
-  account.trial_started = true;
-  account.trial_start = new Date();
-  await account.save();
-
-  const user = await adminModel.create({
-    organization: organization._id,
-    name: organization.name,
-    email: organization.email,
-    phone: organization.phone,
-    password: organization.password,
-    designation: "Owner",
-    role: "Super Admin",
-    allowedroutes: [
-      "admin",
-      "dashboard",
-      "people",
-      "company",
-      "lead",
-      "product",
-      "category",
-      "expense",
-      "expense-category",
-      "offer",
-      "proforma-invoice",
-      "invoice",
-      "payment",
-      "customer",
-      "report",
-      "support",
-      "website configuration",
-    ],
-    verified: true,
+  // Check if websiteConfiguration already exists
+  let websiteConfig = await websiteConfigurationModel.findOne({ 
+    organization: organization._id 
   });
+  if (!websiteConfig) {
+    await websiteConfigurationModel.create({
+      creator: user._id,
+      organization: organization._id,
+      indiamart_api: "",
+      facebook_api: "",
+    });
+  }
 
-  await websiteConfigurationModel.create({
-    creator: user._id,
-    organization: organization._id,
-    indiamart_api: "",
-    facebook_api: "",
+  // Check if setting already exists
+  let setting = await settingModel.findOne({ 
+    organization: organization._id 
   });
+  if (!setting) {
+    await settingModel.create({
+      creator: user._id,
+      organization: organization._id,
+    });
+  }
 
-  await settingModel.create({
-    creator: user._id,
-    organization: organization._id,
-  });
-
-  organization.account = account._id;
-  await organization.save();
+  // Link account to organization if not already linked
+  if (!organization.account) {
+    organization.account = account._id;
+    await organization.save();
+  }
 
   await sendEmail(
     email,
@@ -181,22 +206,59 @@ const login = TryCatch(async (req, res) => {
 
   const isVerified = await organizationModel
     .findOne({ email })
-    .select("verified");
+    .select("verified name");
   if (!isVerified.verified) {
     const otpExists = await otpModel.findOne({ email });
     if (!otpExists) {
       const otp = generateOTP();
-      await otpModel.create({
-        email,
-        otp,
-      });
+      await otpModel.findOneAndUpdate(
+        { email },
+        { email, otp },
+        { upsert: true, new: true }
+      );
+      
+      // Send OTP via email
+      try {
+        await SendMail(
+          "OtpVerification.ejs",
+          {
+            userName: isVerified.name,
+            otp: otp,
+          },
+          {
+            email: email,
+            subject: "OTP Verification - Account Verification",
+          }
+        );
+        console.log(`[OTP] Email sent to: ${email}, OTP: ${otp}`);
+      } catch (error) {
+        console.error(`[OTP] Failed to send email to: ${email}`, error);
+      }
+    } else {
+      // Send existing OTP via email
+      try {
+        await SendMail(
+          "OtpVerification.ejs",
+          {
+            userName: isVerified.name,
+            otp: otpExists.otp,
+          },
+          {
+            email: email,
+            subject: "OTP Verification - Account Verification",
+          }
+        );
+        console.log(`[OTP] Email sent to: ${email}, OTP: ${otpExists.otp}`);
+      } catch (error) {
+        console.error(`[OTP] Failed to send email to: ${email}`, error);
+      }
     }
 
     return res.status(401).json({
       status: 401,
       success: false,
       verified: false,
-      message: "Account not verified.",
+      message: "Account not verified. OTP has been sent to your email.",
     });
   }
 
@@ -290,50 +352,60 @@ const getOTP = TryCatch(async (req, res) => {
   const isExistingOtp = await otpModel.findOne({ email: email });
 
   if (isExistingOtp) {
-    await sendEmail(
-      email,
-      "OTP Verification",
-      `
-      <div>Hi ${user.name},</div>
-      <br>
-      <div>${isExistingOtp.otp} is your OTP(One-Time-Password) to verify your account. OTP is valid for 5 minutes. Do not share your OTP with anyone.</div>
-      <br>    
-      <div>Best Regards</div>
-      <div>Deepnap Softech</div>
-      `
-    );
-
+    // Send existing OTP via email
+    try {
+      await SendMail(
+        "OtpVerification.ejs",
+        {
+          userName: user.name,
+          otp: isExistingOtp.otp,
+        },
+        {
+          email: email,
+          subject: "OTP Verification - Password Reset",
+        }
+      );
+      console.log(`[OTP] Email sent to: ${email}, OTP: ${isExistingOtp.otp}`);
+    } catch (error) {
+      console.error(`[OTP] Failed to send email to: ${email}`, error);
+    }
     return res.status(200).json({
       status: 200,
       success: true,
-      message: "OTP has been sent to your email id",
+      message: "OTP has been sent to your email address.",
     });
   }
 
   const otp = generateOTP();
 
-  await otpModel.create({
-    email: user.email,
-    otp,
-  });
-
-  await sendEmail(
-    email,
-    "OTP Verification",
-    `
-      <div>Hi ${user.name},</div>
-      <br>
-      <div>${otp} is your OTP(One-Time-Password) to verify your account. OTP is valid for 5 minutes. Do not share your OTP with anyone.</div>
-      <br>    
-      <div>Best Regards</div>
-      <div>Deepnap Softech</div>
-      `
+  await otpModel.findOneAndUpdate(
+    { email: user.email },
+    { email: user.email, otp },
+    { upsert: true, new: true }
   );
+
+  // Send OTP via email
+  try {
+    await SendMail(
+      "OtpVerification.ejs",
+      {
+        userName: user.name,
+        otp: otp,
+      },
+      {
+        email: email,
+        subject: "OTP Verification - Password Reset",
+      }
+    );
+    console.log(`[OTP] Email sent to: ${email}, OTP: ${otp}`);
+  } catch (error) {
+    console.error(`[OTP] Failed to send email to: ${email}`, error);
+  }
 
   res.status(200).json({
     status: 200,
     success: true,
-    message: "OTP has been sent to your email id",
+    message: "OTP has been sent to your email address.",
   });
 });
 

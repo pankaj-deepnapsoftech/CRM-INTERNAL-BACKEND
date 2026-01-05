@@ -75,11 +75,12 @@
 // sendEmail.js
 const nodemailer = require("nodemailer");
 
-async function createHostingerTransport(from, password, options = {}) {
+async function createGmailTransport(from, password, options = {}) {
   const config = {
-    host: "smtp.hostinger.com",
-    port: options.port || 465,
-    secure: options.secure !== undefined ? options.secure : true,
+    host: "smtp.gmail.com",
+    port: options.port || 587,
+    secure: options.secure !== undefined ? options.secure : false,
+    requireTLS: true,
     auth: {
       user: from,
       pass: password,
@@ -94,10 +95,10 @@ async function createHostingerTransport(from, password, options = {}) {
     },
   };
 
-  // If using port 587, use STARTTLS instead of SSL
-  if (config.port === 587) {
-    config.secure = false;
-    config.requireTLS = true;
+  // If using port 465, use SSL
+  if (config.port === 465) {
+    config.secure = true;
+    config.requireTLS = false;
   }
 
   return nodemailer.createTransport(config);
@@ -105,8 +106,8 @@ async function createHostingerTransport(from, password, options = {}) {
 
 const sendEmail = async (to, subject, htmlText) => {
   // Hardcoded email credentials
-  const from = "noreply@itsybizz.com";
-  const password = "Noreply@282013";
+  const from = "ashu546888@gmail.com";
+  const password = "bhgh jciz ywfq yakk";
   
   try {
     
@@ -120,9 +121,9 @@ const sendEmail = async (to, subject, htmlText) => {
     
     // Log email being used (without password) for debugging
     console.log(`Attempting to send email from: ${from} to: ${to}`);
-    console.log(`SMTP Server: smtp.hostinger.com, Port: 465 (SSL)`);
+    console.log(`SMTP Server: smtp.gmail.com, Port: 587 (STARTTLS)`);
     
-    let transporter = await createHostingerTransport(from, password);
+    let transporter = await createGmailTransport(from, password);
     
     // Verify connection before sending
     console.log("Verifying SMTP connection...");
@@ -133,22 +134,22 @@ const sendEmail = async (to, subject, htmlText) => {
       connectionVerified = true;
     } catch (verifyError) {
       console.error("SMTP verification failed with port 465:", verifyError.message);
-      // Try alternative port 587 with STARTTLS
+      // Try alternative port 465 with SSL
       try {
-        console.log("Trying port 587 with STARTTLS...");
-        transporter = await createHostingerTransport(from, password, { port: 587, secure: false });
+        console.log("Trying port 465 with SSL...");
+        transporter = await createGmailTransport(from, password, { port: 465, secure: true });
         await transporter.verify();
-        console.log("SMTP connection verified successfully with port 587");
+        console.log("SMTP connection verified successfully with port 465");
         connectionVerified = true;
-      } catch (port587Error) {
-        console.error("SMTP verification failed with port 587:", port587Error.message);
+      } catch (port465Error) {
+        console.error("SMTP verification failed with port 465:", port465Error.message);
         // Re-throw the original error for better diagnostics
         throw verifyError;
       }
     }
     
     if (!connectionVerified) {
-      throw new Error("Failed to establish SMTP connection with both port 465 and 587");
+      throw new Error("Failed to establish SMTP connection with both port 587 and 465");
     }
     
     const mailOptions = {
@@ -159,7 +160,7 @@ const sendEmail = async (to, subject, htmlText) => {
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log("Hostinger: Email sent successfully:", info.response);
+    console.log("Gmail: Email sent successfully:", info.response);
     return info;
   } catch (err) {
     console.error("sendEmail error details:", {
@@ -180,16 +181,16 @@ const sendEmail = async (to, subject, htmlText) => {
       console.error("EMAIL_ID:", from || 'NOT SET');
       console.error("EMAIL_PASSWORD:", password ? 'Set (length: ' + password.length + ')' : 'NOT SET');
       console.error("\nTroubleshooting steps:");
-      console.error("1. Verify EMAIL_ID format: Should be full email (e.g., noreply@" + emailDomain + ")");
-      console.error("2. Check EMAIL_PASSWORD: Must be the email account password, NOT your Hostinger hosting account password");
-      console.error("3. Verify email account exists: Log into Hostinger control panel → Email → Check if the email account is created and active");
-      console.error("4. Reset email password: If unsure, reset the email password in Hostinger control panel");
+      console.error("1. Verify EMAIL_ID format: Should be full email (e.g., " + from + ")");
+      console.error("2. For Gmail: If 2FA is enabled, you MUST use an App Password instead of your regular password");
+      console.error("3. To create an App Password: Google Account → Security → 2-Step Verification → App passwords");
+      console.error("4. Verify email account exists and is active");
       console.error("5. Check email account status: Ensure the email account is not suspended or disabled");
-      console.error("6. Common mistake: Using hosting account password instead of email account password");
+      console.error("6. Common mistake: Using regular Gmail password when 2FA is enabled (must use App Password)");
       console.error("=====================================\n");
       
       // Shorter error message for API response
-      const errorMsg = `Email service authentication failed. Please verify EMAIL_ID and EMAIL_PASSWORD in your .env file. For Hostinger emails, ensure you're using the email account password (not the hosting account password) and that the email account exists and is active.`;
+      const errorMsg = `Email service authentication failed. Please verify the email credentials are correct. For Gmail accounts with 2FA enabled, you must use an App Password instead of your regular password.`;
       
       throw new Error(errorMsg);
     }
@@ -205,8 +206,8 @@ const sendEmail = async (to, subject, htmlText) => {
 
 const sendBusinessEmail = async (to, subject, htmlText, fromOverride, passwordOverride) => {
   // Hardcoded email credentials (can be overridden by function parameters)
-  const from = fromOverride || "noreply@itsybizz.com";
-  const password = passwordOverride || "Noreply@282013";
+  const from = fromOverride || "ashu546888@gmail.com";
+  const password = passwordOverride || "bhgh jciz ywfq yakk";
   
   try {
     if (!from || !password) {
@@ -214,7 +215,7 @@ const sendBusinessEmail = async (to, subject, htmlText, fromOverride, passwordOv
     }
 
     console.log(`Attempting to send business email from: ${from} to: ${to}`);
-    let transporter = await createHostingerTransport(from, password);
+    let transporter = await createGmailTransport(from, password);
     
     // Verify connection before sending with fallback
     console.log("Verifying SMTP connection...");
@@ -224,14 +225,14 @@ const sendBusinessEmail = async (to, subject, htmlText, fromOverride, passwordOv
       console.log("SMTP connection verified successfully");
       connectionVerified = true;
     } catch (verifyError) {
-      console.error("SMTP verification failed with port 465, trying port 587...");
+      console.error("SMTP verification failed with port 587, trying port 465...");
       try {
-        transporter = await createHostingerTransport(from, password, { port: 587, secure: false });
+        transporter = await createGmailTransport(from, password, { port: 465, secure: true });
         await transporter.verify();
-        console.log("SMTP connection verified successfully with port 587");
+        console.log("SMTP connection verified successfully with port 465");
         connectionVerified = true;
-      } catch (port587Error) {
-        console.error("SMTP verification failed with port 587:", port587Error.message);
+      } catch (port465Error) {
+        console.error("SMTP verification failed with port 465:", port465Error.message);
         throw verifyError;
       }
     }
@@ -244,7 +245,7 @@ const sendBusinessEmail = async (to, subject, htmlText, fromOverride, passwordOv
     };
 
     const info = await transporter.sendMail(mailOptions);
-    console.log("Hostinger: Business email sent:", info.response);
+    console.log("Gmail: Business email sent:", info.response);
     return info;
   } catch (err) {
     console.error("sendBusinessEmail error:", err);

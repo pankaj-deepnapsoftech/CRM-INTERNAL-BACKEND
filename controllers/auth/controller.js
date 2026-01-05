@@ -611,23 +611,12 @@ const getOTP = TryCatch(async (req, res) => {
   const isExistingOtp = await otpModel.findOne({ email: resolvedEmail });
 
   if (isExistingOtp) {
-    await sendEmail(
-      resolvedEmail,
-      "OTP Verification",
-      `
-    <div>Hi ${user.name},</div>
-    <br>
-    <div>${isExistingOtp.otp} is your OTP(One-Time-Password) to verify your account. OTP is valid for 5 minutes. Do not share your OTP with anyone.</div>
-    <br>    
-    <div>Best Regards</div>
-    <div>Deepnap Softech</div>
-    `
-    );
-
+    // OTP saved in database - check database to view OTP
+    console.log(`[OTP] Email: ${resolvedEmail}, OTP: ${isExistingOtp.otp}`);
     return res.status(200).json({
       status: 200,
       success: true,
-      message: "OTP has been sent to your email id",
+      message: "OTP has been generated and saved in database. Please check database to view OTP.",
     });
   }
 
@@ -638,23 +627,13 @@ const getOTP = TryCatch(async (req, res) => {
     otp,
   });
 
-  await sendEmail(
-    resolvedEmail,
-    "OTP Verification",
-    `
-    <div>Hi ${user.name},</div>
-    <br>
-    <div>${otp} is your OTP(One-Time-Password) to verify your account. OTP is valid for 5 minutes. Do not share your OTP with anyone.</div>
-    <br>    
-    <div>Best Regards</div>
-    <div>Deepnap Softech</div>
-    `
-  );
+  // OTP saved in database - check database to view OTP
+  console.log(`[OTP] Email: ${resolvedEmail}, OTP: ${otp}`);
 
   res.status(200).json({
     status: 200,
     success: true,
-    message: "OTP has been sent to your email id",
+    message: "OTP has been generated and saved in database. Please check database to view OTP.",
   });
 });
 

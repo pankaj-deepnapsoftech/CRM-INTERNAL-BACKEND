@@ -4,12 +4,13 @@ const path = require("path");
 const ejs = require("ejs");
 
 const transporter = createTransport({
-  host: "smtp.hostinger.com",
-  port: 465,
-  secure: true,
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false,
+  requireTLS: true,
   auth: {
-    user: "noreply@itsybizz.com",
-    pass: "Noreply@282013",
+    user: "ashu546888@gmail.com",
+    pass: "bhgh jciz ywfq yakk",
   },
   // Add timeout and connection options
   connectionTimeout: 10000, // 10 seconds
@@ -28,7 +29,7 @@ async function SendMail(templateName, templateData, reciverData) {
     const Emailtemplate = await ejs.renderFile(newPath, templateData);
 
     await transporter.sendMail({
-      from: "noreply@itsybizz.com",
+      from: "ashu546888@gmail.com",
       to: reciverData.email,
       subject: reciverData.subject,
       text: "Itsybizz OTP",
@@ -45,7 +46,7 @@ async function SendMail(templateName, templateData, reciverData) {
 async function SendBulkMail(reciverData) {
   try {
     await transporter.sendMail({
-      from: "noreply@itsybizz.com",
+      from: "ashu546888@gmail.com",
       to: reciverData.email,
       subject: reciverData.subject,
       html: `

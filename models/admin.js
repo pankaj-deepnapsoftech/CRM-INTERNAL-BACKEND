@@ -17,7 +17,7 @@ const adminSchema = mongoose.Schema(
         employeeId: {
         type: String,
         unique: true,
-        index: true,
+        sparse: true,
       },
     name: {
       type: String,

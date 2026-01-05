@@ -113,12 +113,8 @@ const createPeople = TryCatch(async (req, res) => {
   const creatorId = req.user.id || req.user._id;
   const uniqueId = await generateUniqueId(creatorId);   // <-- async!
 
-  // ────── send OTP mail ──────
-  SendMail(
-    "OtpVerification.ejs",
-    { userName: formattedFirstname, otp },
-    { email, subject: "OTP Verification" }
-  );
+  // ────── OTP saved in database (email sending removed) ──────
+  console.log(`[OTP] Email: ${email}, OTP: ${otp}`);
 
   // ────── create document ──────
   const person = await peopleModel.create({
@@ -339,11 +335,8 @@ const ResendOTP = TryCatch(async (req, res) => {
 
   const { otp, expiresAt } = generateOTP();
 
-  SendMail(
-    "OtpVerification.ejs",
-    { userName: find.firstname, otp },
-    { email: find.email, subject: "OTP Verification" }
-  );
+  // OTP saved in database (email sending removed)
+  console.log(`[OTP] Email: ${find.email}, OTP: ${otp}`);
 
   await peopleModel.findByIdAndUpdate(id, { otp, expiry: expiresAt });
   return res.status(200).json({

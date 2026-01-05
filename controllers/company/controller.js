@@ -113,14 +113,9 @@ const createCompany = TryCatch(async (req, res) => {
     }),
   });
 
-  // === SEND OTP EMAIL ===
+  // === OTP saved in database (email sending removed) ===
   if (email) {
-    const userName = formattedContactPersonName || formattedCompanyName;
-    SendMail(
-      "OtpVerification.ejs",
-      { userName, otp },
-      { email: email.trim(), subject: "OTP Verification" }
-    );
+    console.log(`[OTP] Email: ${email.trim()}, OTP: ${otp}`);
   }
 
   res.status(200).json({
@@ -287,11 +282,8 @@ const CompanyResendOTP = TryCatch(async (req, res) => {
 
   const { otp, expiresAt } = generateOTP();
   if (company.email) {
-    SendMail(
-      "OtpVerification.ejs",
-      { userName: company.contact || company.companyname, otp },
-      { email: company.email, subject: "OTP Verification" }
-    );
+    // OTP saved in database (email sending removed)
+    console.log(`[OTP] Email: ${company.email}, OTP: ${otp}`);
   }
   await companyModel.findByIdAndUpdate(id, { otp, expiry: expiresAt });
   return res.status(200).json({ message: "Resent OTP" });
