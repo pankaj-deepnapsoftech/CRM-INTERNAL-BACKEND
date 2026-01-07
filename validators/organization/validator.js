@@ -2,7 +2,7 @@ const expressValidator = require('express-validator');
 const {body, validationResult} = expressValidator;
 
 const createOrganizationValidator = ()=>[
-    body("name", "Name field should not be empty").notEmpty().isAlpha('en-US', {ignore: ' '}).withMessage("Name field should only contain alphabets"),
+    // body("name", "Name field should not be empty").notEmpty().isAlpha('en-US', {ignore: ' '}).withMessage("Name field should only contain alphabets"),
     body("email", "Email id field should not be empty").notEmpty(),
     body("company", "Company field should not be empty").notEmpty(),
     body("city", "City field should not be empty").notEmpty(),

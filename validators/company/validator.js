@@ -2,8 +2,12 @@ const expressValidator = require('express-validator');
 const {body, validationResult} = expressValidator;
 
 const createCompanyValidator = (req, res)=>[
-    body("companyname", "Name field should not be empty").notEmpty().isAlpha('en-US', {ignore: ' '}).withMessage("Name field should only contain alphabets"),
-    body("email", "Email address field should not be empty").notEmpty().isEmail().withMessage("Email address field is not valid"),
+    // body("companyname", "Name field should not be empty").notEmpty().isAlpha('en-US', {ignore: ' '}).withMessage("Name field should only contain alphabets"),
+    body("email")
+        .optional()
+        .if(body("email").custom(val => /@/.test(val)))
+        .isEmail()
+        .withMessage("Email address field is not valid"),
     body("phone", "Phone field should not be empty").notEmpty().isNumeric().withMessage("Phone Number should only contain digits").isLength(10).withMessage("Phone Number should be digits long")
 ]
 

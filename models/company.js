@@ -46,7 +46,7 @@ const companySchema = mongoose.Schema(
     },
     email: {
       type: String,
-      required: [true, "Email is required"],
+      required: false,
       trim: true,
       lowercase: true,
     },
@@ -67,7 +67,7 @@ const companySchema = mongoose.Schema(
     },
     designation: {
       type: String,
-      required: [true, "Designation is required"],
+      required: false,
       trim: true,
     },
     website: {

@@ -2,7 +2,7 @@ const expressValidator = require('express-validator');
 const {body, validationResult} = expressValidator;
 
 const createPeopleValidator = ()=>[
-    body("firstname", "First Name field should not be empty").notEmpty().isAlpha('en-US', {ignore: ' '}).withMessage("Firstname field should only contain alphabets"),
+    // body("firstname", "First Name field should not be empty").notEmpty().isAlpha('en-US', {ignore: ' '}).withMessage("Firstname field should only contain alphabets"),
     body("lastname", "Last Name field should not be empty").notEmpty().isAlpha('en-US', {ignore: ' '}).withMessage("Lastname field should only contain alphabets"),
     body("email", "Email field should not be empty").notEmpty().isEmail(),
     body("phone", "Phone field should not be empty").notEmpty().isNumeric().withMessage("Phone Number should only contain digits").isLength(10).withMessage("Phone Number should be 10 digits long"),
