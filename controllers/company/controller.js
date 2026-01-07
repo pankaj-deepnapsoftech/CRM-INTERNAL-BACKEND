@@ -5,6 +5,14 @@ const peopleModel = require("../../models/people");
 const { SendMail } = require("../../config/nodeMailer.config");
 const { generateOTP } = require("../../utils/generateOtp");
 
+// Helper to format names consistently
+const formatName = (name = "") => {
+  if (!name || !name.trim()) return "";
+  return (
+    name.trim().charAt(0).toUpperCase() + name.trim().slice(1).toLowerCase()
+  );
+};
+
 const createCompany = TryCatch(async (req, res) => {
   const {
     companyname,
@@ -62,14 +70,6 @@ const createCompany = TryCatch(async (req, res) => {
     }
   }
 
-  // === FORMAT NAMES ===
-  const formatName = (name = "") => {
-    if (!name || !name.trim()) return "";
-    return (
-      name.trim().charAt(0).toUpperCase() + name.trim().slice(1).toLowerCase()
-    );
-  };
-
   const formattedCompanyName = formatName(companyname);
   const formattedContactPersonName = formatName(contactPersonName);
 
@@ -123,6 +123,182 @@ const createCompany = TryCatch(async (req, res) => {
     success: true,
     message: "Corporate has been created successfully",
     company,
+  });
+});
+
+// === BULK CREATE COMPANIES FROM ALREADY PARSED ROWS ===
+// Expected row shape (keys must match uploaded CSV headers):
+// Company_Name, Address, Contact, Phone, Designation, Email, GST_Number, Status, website, Comment
+const bulkCreateCompanies = TryCatch(async (req, res) => {
+  const { rows = [] } = req.body;
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new ErrorHandler("No rows provided for bulk upload", 400);
+  }
+
+  const creatorId = req.user.id || req.user._id;
+
+  // Enforce prospect cap similar to single create
+  try {
+    const [peopleCount, companyCount] = await Promise.all([
+      peopleModel.countDocuments({ creator: creatorId }),
+      companyModel.countDocuments({ creator: creatorId }),
+    ]);
+
+    if (peopleCount + companyCount >= 1000) {
+      return res.status(403).json({
+        status: 403,
+        success: false,
+        message:
+          "Prospect limit reached for your plan. Please upgrade to add more.",
+      });
+    }
+
+    if (peopleCount + companyCount + rows.length > 1000) {
+      return res.status(403).json({
+        status: 403,
+        success: false,
+        message:
+          "Bulk upload size exceeds your remaining prospect limit. Please reduce rows or upgrade.",
+      });
+    }
+  } catch (e) {
+    // ignore count errors
+  }
+
+  const created = [];
+  const skipped = [];
+
+  for (let index = 0; index < rows.length; index++) {
+    const r = rows[index] || {};
+
+    // Map CSV headers to company fields
+    const rawCompanyName = r.Company_Name || r.companyname || "";
+    const rawAddress = r.Address || r.address || "";
+    const rawContactPersonName = r.Contact || r.contactPersonName || "";
+    const rawPhone = String(r.Phone || r.phone || "").trim();
+    const rawDesignation = r.Designation || r.designation || "";
+    const rawEmail = (r.Email || r.email || "").trim();
+    const rawWebsite = r.website || r.Website || r.site || "";
+    const rawGst = String(r.GST_Number || r.gst_no || "").trim();
+    const rawStatus = r.Status || r.status || "";
+    const rawComment = r.Comment || r.comment || "";
+
+    // Basic validation similar to frontend rules
+    if (!rawCompanyName || !rawAddress || !rawContactPersonName) {
+      skipped.push({
+        index,
+        reason: "Missing required fields (Company_Name, Address, Contact)",
+      });
+      continue;
+    }
+
+    if (rawPhone && rawPhone.length !== 10) {
+      skipped.push({
+        index,
+        reason: "Phone number must be exactly 10 digits",
+      });
+      continue;
+    }
+
+    if (rawGst && rawGst.length !== 15) {
+      skipped.push({
+        index,
+        reason: "GST number must be exactly 15 characters",
+      });
+      continue;
+    }
+
+    if (rawGst && !/^[A-Z0-9]{15}$/.test(rawGst)) {
+      skipped.push({
+        index,
+        reason: "GST number must contain only capital letters and numbers",
+      });
+      continue;
+    }
+
+    // Duplicate checks similar to single create
+    try {
+      if (rawEmail) {
+        const existingByEmail = await companyModel.findOne({
+          email: rawEmail.toLowerCase(),
+        });
+        if (existingByEmail) {
+          skipped.push({
+            index,
+            reason: "Corporate with this email already exists",
+          });
+          continue;
+        }
+      }
+
+      if (rawPhone) {
+        const existingByPhone = await companyModel.findOne({
+          phone: rawPhone,
+        });
+        if (existingByPhone) {
+          skipped.push({
+            index,
+            reason: "Corporate with this phone already exists",
+          });
+          continue;
+        }
+      }
+
+      const formattedCompanyName = formatName(rawCompanyName);
+      const formattedContactPersonName = formatName(rawContactPersonName);
+      const { otp, expiresAt } = generateOTP();
+
+      const payload = {
+        organization: req.user.organization,
+        creator: creatorId,
+        companyname: formattedCompanyName,
+        email: rawEmail ? rawEmail.toLowerCase() : undefined,
+        contactPersonName: formattedContactPersonName,
+        phone: rawPhone || undefined,
+        designation: rawDesignation ? rawDesignation.trim() : undefined,
+        website: rawWebsite ? rawWebsite.trim() : undefined,
+        gst_no: rawGst ? rawGst.toUpperCase() : undefined,
+        address: rawAddress ? rawAddress.trim() : undefined,
+        additionalContacts: [],
+        status: rawStatus || "",
+        isArchived: rawStatus === "Not Interested",
+        otp,
+        expiry: expiresAt,
+      };
+
+      // Initial comment if provided
+      if (rawComment && rawComment.trim()) {
+        payload.comments = [
+          {
+            comment: rawComment.trim(),
+            createdBy: creatorId,
+          },
+        ];
+      }
+
+      const company = await companyModel.create(payload);
+      created.push(company);
+
+      if (rawEmail) {
+        console.log(`[OTP][BULK] Email: ${rawEmail}, OTP: ${otp}`);
+      }
+    } catch (err) {
+      skipped.push({
+        index,
+        reason: err.message || "Failed to create corporate",
+      });
+    }
+  }
+
+  res.status(200).json({
+    status: 200,
+    success: true,
+    message: `Bulk upload completed. Created ${created.length} corporates, skipped ${skipped.length}.`,
+    createdCount: created.length,
+    skippedCount: skipped.length,
+    created,
+    skipped,
   });
 });
 
@@ -418,4 +594,5 @@ module.exports = {
   CompanyResendOTP,
   addComment,
   getComments,
+  bulkCreateCompanies,
 };

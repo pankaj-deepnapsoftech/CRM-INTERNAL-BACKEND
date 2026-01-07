@@ -8,8 +8,13 @@ const paymentModel = require("../../models/payment");
 const peopleModel = require("../../models/people");
 const proformaInvoiceModel = require("../../models/proformaInvoice");
 const { generateOTP } = require("../../utils/generateOtp");
-const generateUniqueId = require('../../utils/generateUniqueId');
+const generateUniqueId = require("../../utils/generateUniqueId");
 
+// Helper to format names consistently
+const formatName = (n = "") =>
+  n && n.trim()
+    ? n.trim().charAt(0).toUpperCase() + n.trim().slice(1).toLowerCase()
+    : "";
 
 // Add remark to a person
 const addRemarkToPerson = TryCatch(async (req, res) => {
@@ -88,7 +93,8 @@ const createPeople = TryCatch(async (req, res) => {
     if (peopleCount + companyCount >= 1000) {
       return res.status(403).json({
         success: false,
-        message: "Prospect limit reached for your plan. Please upgrade to add more.",
+        message:
+          "Prospect limit reached for your plan. Please upgrade to add more.",
       });
     }
   } catch (e) {}
@@ -99,11 +105,8 @@ const createPeople = TryCatch(async (req, res) => {
   if (await peopleModel.findOne({ phone }))
     throw new Error("Person with this phone no. already exists", 409);
 
-  // ────── format names ──────
-  const formatName = (n = "") =>
-    n.trim() ? n.charAt(0).toUpperCase() + n.slice(1).toLowerCase() : "";
   const formattedFirstname = formatName(firstname);
-  const formattedLastname  = formatName(lastname);
+  const formattedLastname = formatName(lastname);
 
   // ────── OTP ──────
   const { otp, expiresAt } = generateOTP();
@@ -111,7 +114,7 @@ const createPeople = TryCatch(async (req, res) => {
   // ────── **GENERATE IND-xxx** ──────
   // Generate uniqueId based on creator - each admin starts from IND-001
   const creatorId = req.user.id || req.user._id;
-  const uniqueId = await generateUniqueId(creatorId);   // <-- async!
+  const uniqueId = await generateUniqueId(creatorId); // <-- async!
 
   // ────── OTP saved in database (email sending removed) ──────
   console.log(`[OTP] Email: ${email}, OTP: ${otp}`);
@@ -130,13 +133,156 @@ const createPeople = TryCatch(async (req, res) => {
     otp,
     expiry: expiresAt,
     verify: false,
-    uniqueId,                 // <-- IND-001, IND-002, …
+    uniqueId, // <-- IND-001, IND-002, …
   });
 
   res.status(201).json({
     success: true,
     message: "Person has been created successfully",
     person,
+  });
+});
+
+// === BULK CREATE INDIVIDUALS FROM PARSED CSV/XLSX ROWS ===
+// Expected headers: firstname, lastname, phone, email, (optional) status, comment
+const bulkCreatePeople = TryCatch(async (req, res) => {
+  const { rows = [] } = req.body;
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    throw new ErrorHandler("No rows provided for bulk upload", 400);
+  }
+
+  const creatorId = req.user.id || req.user._id;
+
+  // Prospect cap check including bulk size
+  try {
+    const [peopleCount, companyCount] = await Promise.all([
+      peopleModel.countDocuments({ creator: creatorId }),
+      require("../../models/company").countDocuments({ creator: creatorId }),
+    ]);
+
+    if (peopleCount + companyCount >= 1000) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Prospect limit reached for your plan. Please upgrade to add more.",
+      });
+    }
+
+    if (peopleCount + companyCount + rows.length > 1000) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Bulk upload size exceeds your remaining prospect limit. Please reduce rows or upgrade.",
+      });
+    }
+  } catch (e) {}
+
+  const created = [];
+  const skipped = [];
+
+  for (let index = 0; index < rows.length; index++) {
+    const r = rows[index] || {};
+
+    const rawFirstname = r.firstname || r.firstName || "";
+    const rawLastname = r.lastname || r.lastName || "";
+    const rawPhone = String(r.phone || "").trim();
+    const rawEmail = (r.email || "").trim();
+    const rawStatus = r.status || "";
+    const rawComment = r.comment || "";
+
+    // Basic validations somewhat aligned with drawer validations
+    if (!rawFirstname || !rawLastname || !rawPhone || !rawEmail) {
+      skipped.push({
+        index,
+        reason: "Missing required fields (firstname, lastname, phone, email)",
+      });
+      continue;
+    }
+
+    if (rawFirstname.length > 25) {
+      skipped.push({
+        index,
+        reason: "Firstname must be less than or equal to 25 characters",
+      });
+      continue;
+    }
+
+    if (rawLastname.length > 25) {
+      skipped.push({
+        index,
+        reason: "Lastname must be less than or equal to 25 characters",
+      });
+      continue;
+    }
+
+    if (rawPhone.length !== 10) {
+      skipped.push({
+        index,
+        reason: "Phone number must be exactly 10 digits",
+      });
+      continue;
+    }
+
+    // Duplicate checks like single create
+    try {
+      if (await peopleModel.findOne({ email: rawEmail })) {
+        skipped.push({
+          index,
+          reason: "Person with this email already exists",
+        });
+        continue;
+      }
+
+      if (await peopleModel.findOne({ phone: rawPhone })) {
+        skipped.push({
+          index,
+          reason: "Person with this phone already exists",
+        });
+        continue;
+      }
+
+      const formattedFirstname = formatName(rawFirstname);
+      const formattedLastname = formatName(rawLastname);
+
+      const { otp, expiresAt } = generateOTP();
+      const uniqueId = await generateUniqueId(creatorId);
+
+      const payload = {
+        organization: req.user.organization,
+        creator: req.user.id,
+        firstname: formattedFirstname,
+        lastname: formattedLastname,
+        email: rawEmail,
+        phone: rawPhone,
+        status: rawStatus || "",
+        comment: rawComment || "",
+        isArchived: rawStatus === "Not Interested",
+        otp,
+        expiry: expiresAt,
+        verify: false,
+        uniqueId,
+      };
+
+      const person = await peopleModel.create(payload);
+      created.push(person);
+
+      console.log(`[OTP][PEOPLE_BULK] Email: ${rawEmail}, OTP: ${otp}`);
+    } catch (err) {
+      skipped.push({
+        index,
+        reason: err.message || "Failed to create person",
+      });
+    }
+  }
+
+  res.status(200).json({
+    success: true,
+    message: `Bulk upload completed. Created ${created.length} individuals, skipped ${skipped.length}.`,
+    createdCount: created.length,
+    skippedCount: skipped.length,
+    created,
+    skipped,
   });
 });
 
@@ -424,4 +570,5 @@ module.exports = {
   getAllWhatsappSentData,
   addRemarkToPerson,
   getRemarksForPerson,
+  bulkCreatePeople,
 };

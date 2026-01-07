@@ -13,6 +13,7 @@ const {
   getAllWhatsappSentData,
   addRemarkToPerson,
   getRemarksForPerson,
+  bulkCreatePeople,
 } = require("../../controllers/people/controller");
 const {
   createPeopleValidator,
@@ -20,6 +21,7 @@ const {
   editPeopleValidator,
   deletePeopleValidator,
   peopleDetailsValidator,
+  bulkCreatePeopleValidator,
 } = require("../../validators/people/validator");
 const { checkAccess } = require("../../helpers/checkAccess");
 const router = express.Router();
@@ -59,6 +61,16 @@ router.get("/verified-peoples", VerifyedPeople);
 router.post("/send-bulk-mail", SendBulkEmailVerifiedUser);
 router.get("/get-bulk-mail", getAllEmailSentData);
 router.get("/get-bulk-whatsapp", getAllWhatsappSentData);
+
+// Bulk create individuals from parsed CSV/XLSX rows
+router.post(
+  "/bulk-create",
+  checkAccess,
+  bulkCreatePeopleValidator(),
+  validateHandler,
+  bulkCreatePeople
+);
+
 // Remarks log
 router.post("/add-remark", checkAccess, addRemarkToPerson);
 router.get("/remarks/:peopleId", checkAccess, getRemarksForPerson);
